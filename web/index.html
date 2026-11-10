@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>聊天伙伴</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --primary: #4f6ef7;
+      --primary-hover: #3d5be0;
+      --text: #1f2430;
+      --muted: #8a91a3;
+      --border: #e6e9f0;
+      --bubble-user: #4f6ef7;
+      --bubble-user-text: #ffffff;
+      --bubble-bot: #f0f2f7;
+      --bubble-bot-text: #1f2430;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg); color: var(--text); height: 100vh; display: flex;
+    }
+    .sidebar {
+      width: 260px; background: var(--panel); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; padding: 16px 12px; gap: 12px;
+    }
+    .sidebar h1 { font-size: 18px; padding: 4px 8px; }
+    .btn-new {
+      background: var(--primary); color: #fff; border: none; border-radius: 10px;
+      padding: 10px 14px; font-size: 14px; cursor: pointer; transition: background .15s;
+    }
+    .btn-new:hover { background: var(--primary-hover); }
+    .conv-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+    .conv-item {
+      padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 14px;
+      color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .conv-item:hover { background: #f3f5fa; }
+    .conv-item.active { background: #eef1ff; color: var(--primary); }
+    .conv-item .del { font-size: 16px; display: none; }
+    .conv-item:hover .del { display: inline; }
+
+    .persona-bar {
+      border-top: 1px solid var(--border); padding-top: 12px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .persona-bar label { font-size: 12px; color: var(--muted); }
+    .persona-bar select {
+      width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px;
+    }
+
+    .main { flex: 1; display: flex; flex-direction: column; }
+    .chat-header {
+      padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
+      font-size: 15px; font-weight: 600;
+    }
+    .chat-window { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+    .msg { max-width: 72%; display: flex; }
+    .msg.user { align-self: flex-end; }
+    .msg.bot { align-self: flex-start; }
+    .bubble {
+      padding: 12px 16px; border-radius: 14px; font-size: 15px; line-height: 1.6;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .msg.user .bubble { background: var(--bubble-user); color: var(--bubble-user-text); border-bottom-right-radius: 4px; }
+    .msg.bot .bubble { background: var(--bubble-bot); color: var(--bubble-bot-text); border-bottom-left-radius: 4px; }
+    .typing { color: var(--muted); font-size: 14px; padding: 8px 16px; }
+    .input-bar {
+      display: flex; gap: 10px; padding: 14px 20px; background: var(--panel);
+      border-top: 1px solid var(--border);
+    }
+    .input-bar textarea {
+      flex: 1; resize: none; border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px; font-size: 15px; font-family: inherit; max-height: 120px; outline: none;
+    }
+    .input-bar textarea:focus { border-color: var(--primary); }
+    .btn-send {
+      background: var(--primary); color: #fff; border: none; border-radius: 10px;
+      padding: 0 22px; font-size: 15px; cursor: pointer; transition: background .15s;
+    }
+    .btn-send:hover { background: var(--primary-hover); }
+    .btn-send:disabled { background: #b6c0f5; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <h1>💬 聊天伙伴</h1>
+    <button class="btn-new" id="btnNew">＋ 新对话</button>
+    <div class="conv-list" id="convList"></div>
+    <div class="persona-bar">
+      <label for="persona">伙伴人设</label>
+      <select id="persona">
+        <option value="buddy">温暖伙伴</option>
+        <option value="cheerleader">元气鼓励</option>
+        <option value="scientist">理性学者</option>
+      </select>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="chat-header" id="chatTitle">欢迎回来，聊点什么吧～</div>
+    <div class="chat-window" id="chatWindow"></div>
+    <div class="input-bar">
+      <textarea id="input" rows="1" placeholder="输入消息，Ctrl+Enter 发送"></textarea>
+      <button class="btn-send" id="btnSend">发送</button>
+    </div>
+  </main>
+
+  <script>
+    let conversationId = null;
+    const chatWindow = document.getElementById('chatWindow');
+    const convList = document.getElementById('convList');
+    const input = document.getElementById('input');
+    const btnSend = document.getElementById('btnSend');
+    const btnNew = document.getElementById('btnNew');
+    const personaSelect = document.getElementById('persona');
+
+    function addBubble(role, text) {
+      const wrap = document.createElement('div');
+      wrap.className = 'msg ' + role;
+      const b = document.createElement('div');
+      b.className = 'bubble';
+      b.textContent = text;
+      wrap.appendChild(b);
+      chatWindow.appendChild(wrap);
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+      return b;
+    }
+
+    async function refreshConversations(activeId) {
+      try {
+        const resp = await fetch('/api/conversations');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        convList.innerHTML = '';
+        for (const c of data) {
+          const item = document.createElement('div');
+          item.className = 'conv-item' + (c.id === activeId ? ' active' : '');
+          item.dataset.id = c.id;
+          item.innerHTML = '<span class="title">' + escapeHtml(c.title) + '</span>' +
+            '<span class="del" title="删除">✕</span>';
+          convList.appendChild(item);
+        }
+      } catch (err) {
+        // 会话列表加载失败时静默处理，不影响聊天
+      }
+    }
+
+    // 事件委托：点击会话项打开历史，点击删除按钮删除会话
+    convList.addEventListener('click', (e) => {
+      const del = e.target.closest('.del');
+      const item = e.target.closest('.conv-item');
+      if (!item) return;
+      if (del) {
+        e.stopPropagation();
+        deleteConversation(item.dataset.id);
+      } else {
+        loadConversation(item.dataset.id);
+      }
+    });
+
+    async function loadConversation(id) {
+      conversationId = id;
+      try {
+        const resp = await fetch('/api/conversations/' + id);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        chatWindow.innerHTML = '';
+        document.getElementById('chatTitle').textContent = data.title;
+        for (const m of data.messages) {
+          addBubble(m.role === 'user' ? 'user' : 'bot', m.content);
+        }
+      } catch (err) {
+        chatWindow.innerHTML = '';
+        addBubble('bot', '加载历史失败：' + err.message);
+      }
+      refreshConversations(id);
+    }
+
+    async function deleteConversation(id) {
+      await fetch('/api/conversations/' + id, { method: 'DELETE' });
+      if (conversationId === id) {
+        conversationId = null;
+        chatWindow.innerHTML = '';
+        document.getElementById('chatTitle').textContent = '欢迎回来，聊点什么吧～';
+      }
+      refreshConversations(conversationId);
+    }
+
+    function startNew() {
+      conversationId = null;
+      chatWindow.innerHTML = '';
+      document.getElementById('chatTitle').textContent = '新对话';
+      refreshConversations(null);
+      input.focus();
+    }
+
+    async function send() {
+      const text = input.value.trim();
+      if (!text) return;
+      addBubble('user', text);
+      input.value = '';
+      input.style.height = 'auto';
+      btnSend.disabled = true;
+
+      const bot = addBubble('bot', '');
+      const persona = personaSelect.value;
+      const payload = JSON.stringify({
+        message: text,
+        conversation_id: conversationId,
+        persona: persona,
+        stream: true,
+      });
+
+      try {
+        const resp = await fetch('/api/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+        });
+        if (!resp.ok) {
+          bot.textContent = '请求失败：' + resp.status;
+          return;
+        }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          // SSE 用换行分隔；统一把 \r\n 规范化为 \n 后再按空行切分事件
+          const normalized = buffer.replace(/\r\n/g, '\n');
+          const events = normalized.split('\n\n');
+          buffer = events.pop();
+          for (const ev of events) {
+            const lines = ev.split('\n');
+            for (const line of lines) {
+              if (line.startsWith('data:')) {
+                let payload = line.slice(5).trim();
+                if (!payload) continue;
+                const data = JSON.parse(payload);
+                if (data.type === 'start' || (data.conversation_id && !conversationId)) {
+                  if (data.conversation_id) conversationId = data.conversation_id;
+                } else if (data.type === 'token') {
+                  bot.textContent += data.content;
+                  chatWindow.scrollTop = chatWindow.scrollHeight;
+                }
+              }
+            }
+          }
+        }
+        refreshConversations(conversationId);
+      } catch (e) {
+        bot.textContent = '出错了：' + e.message;
+      } finally {
+        btnSend.disabled = false;
+        input.focus();
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    btnSend.onclick = send;
+    btnNew.onclick = startNew;
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
+    });
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    });
+
+    refreshConversations(null);
+  </script>
+</body>
+</html>
